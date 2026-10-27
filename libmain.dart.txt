@@ -1,0 +1,639 @@
+import 'dart:convert';
+import 'package:flutter/material.dart';
+import 'package:http/http.dart' as http;
+
+void main() {
+  runApp(const PolyWindingApp());
+}
+
+class PolyWindingApp extends StatelessWidget {
+  const PolyWindingApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MaterialApp(
+      title: 'Poly Winding Wire Pro',
+      debugShowCheckedModeBanner: false,
+      theme: ThemeData(
+        useMaterial3: true,
+        colorScheme: ColorScheme.fromSeed(
+          seedColor: const Color(0xFFD97706),
+          brightness: Brightness.light,
+        ),
+        scaffoldBackgroundColor: const Color(0xFFF1F5F9),
+        cardTheme: const CardTheme(
+          color: Colors.white,
+          elevation: 1,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.all(Radius.circular(16))),
+        ),
+      ),
+      home: const MainTabScreen(),
+    );
+  }
+}
+
+class MainTabScreen extends StatefulWidget {
+  const MainTabScreen({super.key});
+
+  @override
+  State<MainTabScreen> createState() => _MainTabScreenState();
+}
+
+class _MainTabScreenState extends State<MainTabScreen> with SingleTickerProviderStateMixin {
+  late TabController _tabController;
+
+  // Updated Live Google Apps Script Endpoint
+  final String apiUrl = "https://script.google.com/macros/s/AKfycbw9NHXi1Hs9kof3Yo0autLPt5x3XcCvCwgLGS2L8XrNTt7z3Pmw4MEy6DwV6xJhKx6Q/exec";
+
+  // Controllers to ensure UI updates when Google Sheet data syncs
+  final TextEditingController _copperRateCtrl = TextEditingController(text: "850.0");
+  final TextEditingController _filmRateCtrl = TextEditingController(text: "320.0");
+  final TextEditingController _batchQtyCtrl = TextEditingController(text: "1.000");
+
+  double copperRate = 850.0;
+  double filmRate = 320.0;
+  double batchQty = 1.0;
+  String selectedSize = "0.60";
+  bool isSyncing = false;
+  String syncStatus = "Ready";
+
+  // Default master table dataset transcribed from your physical reference
+  List<Map<String, dynamic>> wireTable = [
+    {"size": "0.40", "copperWt": 1.160, "filamWt": 0.350, "coilWt": 1.510, "finalOd": 0.85},
+    {"size": "0.50", "copperWt": 1.790, "filamWt": 0.430, "coilWt": 2.220, "finalOd": 0.95},
+    {"size": "0.60", "copperWt": 2.540, "filamWt": 0.470, "coilWt": 3.010, "finalOd": 1.05},
+    {"size": "0.70", "copperWt": 3.460, "filamWt": 0.600, "coilWt": 4.060, "finalOd": 1.15},
+    {"size": "0.80", "copperWt": 4.510, "filamWt": 0.770, "coilWt": 5.280, "finalOd": 1.25},
+    {"size": "0.90", "copperWt": 5.710, "filamWt": 0.850, "coilWt": 6.560, "finalOd": 1.35},
+    {"size": "1.00", "copperWt": 7.050, "filamWt": 0.900, "coilWt": 7.950, "finalOd": 1.45},
+    {"size": "1.10", "copperWt": 8.530, "filamWt": 1.000, "coilWt": 9.530, "finalOd": 1.55},
+    {"size": "1.20", "copperWt": 10.150, "filamWt": 1.060, "coilWt": 11.210, "finalOd": 1.65},
+    {"size": "1.30", "copperWt": 11.920, "filamWt": 1.370, "coilWt": 13.200, "finalOd": 1.75},
+    {"size": "1.40", "copperWt": 13.820, "filamWt": 1.470, "coilWt": 15.290, "finalOd": 2.00},
+    {"size": "1.50", "copperWt": 15.870, "filamWt": 1.550, "coilWt": 17.420, "finalOd": 2.10},
+    {"size": "1.60", "copperWt": 18.050, "filamWt": 1.680, "coilWt": 19.730, "finalOd": 2.20},
+    {"size": "1.70", "copperWt": 20.380, "filamWt": 1.720, "coilWt": 22.100, "finalOd": 2.30},
+    {"size": "1.80", "copperWt": 22.380, "filamWt": 1.900, "coilWt": 24.750, "finalOd": 2.35},
+    {"size": "1.90", "copperWt": 25.460, "filamWt": 1.980, "coilWt": 27.440, "finalOd": 2.45},
+    {"size": "2.00", "copperWt": 28.210, "filamWt": 2.000, "coilWt": 30.210, "finalOd": 2.55},
+  ];
+
+  @override
+  void initState() {
+    super.initState();
+    _tabController = TabController(length: 3, vsync: this);
+    fetchDataFromCloud();
+  }
+
+  @override
+  void dispose() {
+    _tabController.dispose();
+    _copperRateCtrl.dispose();
+    _filmRateCtrl.dispose();
+    _batchQtyCtrl.dispose();
+    super.dispose();
+  }
+
+  // Cloud Sync Logic
+  Future<void> fetchDataFromCloud() async {
+    setState(() {
+      isSyncing = true;
+      syncStatus = "Syncing with Google Sheets...";
+    });
+    try {
+      final res = await http.get(Uri.parse(apiUrl));
+      if (res.statusCode == 200) {
+        final data = json.decode(res.body);
+        if (data['rates'] != null) {
+          if (data['rates']['copper_rate'] != null) {
+            copperRate = double.tryParse(data['rates']['copper_rate'].toString()) ?? copperRate;
+            _copperRateCtrl.text = copperRate.toStringAsFixed(1);
+          }
+          if (data['rates']['film_rate'] != null) {
+            filmRate = double.tryParse(data['rates']['film_rate'].toString()) ?? filmRate;
+            _filmRateCtrl.text = filmRate.toStringAsFixed(1);
+          }
+        }
+        if (data['table'] != null && (data['table'] as List).isNotEmpty) {
+          wireTable = List<Map<String, dynamic>>.from(data['table'].map((item) => {
+            "size": item['size'].toString(),
+            "copperWt": double.tryParse(item['copperWt'].toString()) ?? 0.0,
+            "filamWt": double.tryParse(item['filamWt'].toString()) ?? 0.0,
+            "coilWt": double.tryParse(item['coilWt'].toString()) ?? 0.0,
+            "finalOd": double.tryParse(item['finalOd'].toString()) ?? 0.0,
+          }));
+        }
+        setState(() {
+          syncStatus = "Synced with Google Sheet";
+        });
+      }
+    } catch (e) {
+      setState(() {
+        syncStatus = "Offline Mode (Local)";
+      });
+    } finally {
+      setState(() => isSyncing = false);
+    }
+  }
+
+  Future<void> pushRatesToCloud() async {
+    setState(() => isSyncing = true);
+    try {
+      await http.post(
+        Uri.parse(apiUrl),
+        headers: {"Content-Type": "text/plain;charset=utf-8"},
+        body: json.encode({
+          "action": "updateRates",
+          "copperRate": copperRate,
+          "filmRate": filmRate,
+        }),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("✓ Rates successfully saved to Google Sheets!")),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Error saving to cloud. Saved locally.")),
+        );
+      }
+    } finally {
+      setState(() => isSyncing = false);
+    }
+  }
+
+  Future<void> pushTableToCloud() async {
+    setState(() => isSyncing = true);
+    try {
+      await http.post(
+        Uri.parse(apiUrl),
+        headers: {"Content-Type": "text/plain;charset=utf-8"},
+        body: json.encode({
+          "action": "updateTable",
+          "table": wireTable,
+        }),
+      );
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("✓ Proportions table updated in Google Sheets!")),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text("Failed to upload table to cloud.")),
+        );
+      }
+    } finally {
+      setState(() => isSyncing = false);
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: const Text(
+          "Poly Winding Master",
+          style: TextStyle(fontWeight: FontWeight.w800, fontSize: 18),
+        ),
+        backgroundColor: const Color(0xFF0F172A),
+        foregroundColor: Colors.white,
+        elevation: 0,
+        actions: [
+          IconButton(
+            icon: isSyncing 
+              ? const SizedBox(width: 18, height: 18, child: CircularProgressIndicator(color: Colors.amber, strokeWidth: 2))
+              : const Icon(Icons.refresh, color: Colors.amber),
+            onPressed: isSyncing ? null : fetchDataFromCloud,
+          )
+        ],
+        bottom: TabBar(
+          controller: _tabController,
+          indicatorColor: Colors.amber,
+          indicatorWeight: 3,
+          labelColor: Colors.amber,
+          unselectedLabelColor: Colors.slate400,
+          tabs: const [
+            Tab(icon: Icon(Icons.calculate_outlined), text: "Calculator"),
+            Tab(icon: Icon(Icons.table_chart_outlined), text: "Edit Table"),
+            Tab(icon: Icon(Icons.cloud_sync_outlined), text: "Rates & Sync"),
+          ],
+        ),
+      ),
+      body: TabBarView(
+        controller: _tabController,
+        children: [
+          buildCalculatorTab(),
+          buildTableEditorTab(),
+          buildSettingsTab(),
+        ],
+      ),
+    );
+  }
+
+  // --- TAB 1: CALCULATOR ---
+  Widget buildCalculatorTab() {
+    final currentWire = wireTable.firstWhere(
+      (w) => w['size'] == selectedSize,
+      orElse: () => wireTable[0],
+    );
+
+    final double cuWt = currentWire['copperWt'];
+    final double filmWt = currentWire['filamWt'];
+    final double coilWt = currentWire['coilWt'];
+    final double finalOd = currentWire['finalOd'];
+
+    final double cuRatio = cuWt / coilWt;
+    final double filmRatio = filmWt / coilWt;
+
+    final double costPerKg = (cuRatio * copperRate) + (filmRatio * filmRate);
+    final double totalBatchCost = costPerKg * batchQty;
+    final double copperNeeded = batchQty * cuRatio;
+    final double filmNeeded = batchQty * filmRatio;
+
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        // 1. Wire Gauge Selector Card
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Text("SELECT WIRE SIZE (MM)", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.blueGrey)),
+                    Container(
+                      padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                      decoration: BoxDecoration(color: Colors.amber.shade50, borderRadius: BorderRadius.circular(8)),
+                      child: Text("Final OD: ${finalOd.toStringAsFixed(2)} mm", style: TextStyle(color: Colors.amber.shade900, fontWeight: FontWeight.bold, fontSize: 12)),
+                    )
+                  ],
+                ),
+                const SizedBox(height: 8),
+                DropdownButtonFormField<String>(
+                  value: wireTable.any((w) => w['size'] == selectedSize) ? selectedSize : wireTable.first['size'],
+                  decoration: InputDecoration(
+                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                  ),
+                  style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
+                  items: wireTable.map((w) {
+                    return DropdownMenuItem<String>(
+                      value: w['size'].toString(),
+                      child: Text("${w['size']} mm  (Coil: ${w['coilWt'].toStringAsFixed(3)} kg)"),
+                    );
+                  }).toList(),
+                  onChanged: (val) {
+                    if (val != null) setState(() => selectedSize = val);
+                  },
+                ),
+                const SizedBox(height: 12),
+                // Weight specs row (Strict 3 decimals)
+                Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    _specItem("Copper Wt", "${cuWt.toStringAsFixed(3)} kg", "${(cuRatio * 100).toStringAsFixed(1)}%"),
+                    _specItem("Film Wt", "${filmWt.toStringAsFixed(3)} kg", "${(filmRatio * 100).toStringAsFixed(1)}%"),
+                    _specItem("Total Coil Wt", "${coilWt.toStringAsFixed(3)} kg", "100%"),
+                  ],
+                )
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // 2. Daily Rate Confirmation Card
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text("TODAY'S RATES (₹ / KG)", style: TextStyle(fontSize: 11, fontWeight: FontWeight.w800, color: Colors.blueGrey)),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Expanded(
+                      child: TextFormField(
+                        controller: _copperRateCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: InputDecoration(
+                          labelText: "Copper Rate",
+                          prefixText: "₹ ",
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onChanged: (v) => setState(() => copperRate = double.tryParse(v) ?? copperRate),
+                      ),
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: TextFormField(
+                        controller: _filmRateCtrl,
+                        keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                        decoration: InputDecoration(
+                          labelText: "Film Rate",
+                          prefixText: "₹ ",
+                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12)),
+                        ),
+                        onChanged: (v) => setState(() => filmRate = double.tryParse(v) ?? filmRate),
+                      ),
+                    ),
+                  ],
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // 3. Batch Target Weight
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                const Text("Batch Qty to Make (kg):", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
+                SizedBox(
+                  width: 110,
+                  child: TextFormField(
+                    controller: _batchQtyCtrl,
+                    textAlign: TextAlign.end,
+                    keyboardType: const TextInputType.numberWithOptions(decimal: true),
+                    decoration: InputDecoration(
+                      contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                      border: OutlineInputBorder(borderRadius: BorderRadius.circular(10)),
+                    ),
+                    onChanged: (v) => setState(() => batchQty = double.tryParse(v) ?? batchQty),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+
+        const SizedBox(height: 12),
+
+        // 4. Large Industrial Output Card
+        Container(
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            gradient: const LinearGradient(
+              colors: [Color(0xFF0F172A), Color(0xFF1E293B)],
+              begin: Alignment.topLeft,
+              end: Alignment.bottomRight,
+            ),
+            borderRadius: BorderRadius.circular(20),
+            boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 10, offset: Offset(0, 4))],
+          ),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Text("FINISHED WIRE COST", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.amber)),
+              const SizedBox(height: 4),
+              Row(
+                crossAxisAlignment: CrossAxisAlignment.baseline,
+                textBaseline: TextBaseline.alphabetic,
+                children: [
+                  Text("₹ ${costPerKg.toStringAsFixed(2)}", style: const TextStyle(fontSize: 34, fontWeight: FontWeight.w900, color: Colors.white)),
+                  const Text(" / kg", style: TextStyle(fontSize: 14, color: Colors.white70)),
+                ],
+              ),
+              const Divider(color: Colors.white24, height: 24),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      const Text("TOTAL BATCH COST", style: TextStyle(fontSize: 10, color: Colors.white60)),
+                      Text("₹ ${totalBatchCost.toStringAsFixed(2)}", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.white)),
+                    ],
+                  ),
+                  Column(
+                    crossAxisAlignment: CrossAxisAlignment.end,
+                    children: [
+                      const Text("AVG COIL WT", style: TextStyle(fontSize: 10, color: Colors.white60)),
+                      Text("${coilWt.toStringAsFixed(3)} kg", style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.amberAccent)),
+                    ],
+                  ),
+                ],
+              ),
+              const SizedBox(height: 16),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(color: Colors.black26, borderRadius: BorderRadius.circular(12)),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceAround,
+                  children: [
+                    Column(
+                      children: [
+                        const Text("COPPER REQUIRED", style: TextStyle(fontSize: 10, color: Colors.amber)),
+                        Text("${copperNeeded.toStringAsFixed(3)} kg", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                      ],
+                    ),
+                    Container(height: 24, width: 1, color: Colors.white24),
+                    Column(
+                      children: [
+                        const Text("FILM REQUIRED", style: TextStyle(fontSize: 10, color: Colors.white60)),
+                        Text("${filmNeeded.toStringAsFixed(3)} kg", style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.white)),
+                      ],
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _specItem(String title, String val, String sub) {
+    return Column(
+      children: [
+        Text(title, style: const TextStyle(fontSize: 10, color: Colors.blueGrey)),
+        Text(val, style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87)),
+        Text(sub, style: const TextStyle(fontSize: 10, color: Colors.grey)),
+      ],
+    );
+  }
+
+  // --- TAB 2: EDIT PROPORTION TABLE ---
+  Widget buildTableEditorTab() {
+    return Scaffold(
+      floatingActionButton: FloatingActionButton.extended(
+        backgroundColor: Colors.amber.shade700,
+        foregroundColor: Colors.white,
+        icon: const Icon(Icons.cloud_upload),
+        label: const Text("Save Table to Cloud"),
+        onPressed: pushTableToCloud,
+      ),
+      body: ListView(
+        padding: const EdgeInsets.only(bottom: 80, top: 12, left: 12, right: 12),
+        children: [
+          Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              const Text("MASTER PROPORTIONS TABLE", style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.blueGrey)),
+              TextButton.icon(
+                icon: const Icon(Icons.add, size: 16),
+                label: const Text("Add Wire Size"),
+                onPressed: () => showEditRowDialog(null),
+              )
+            ],
+          ),
+          Card(
+            clipBehavior: Clip.antiAlias,
+            child: SingleChildScrollView(
+              scrollDirection: Axis.horizontal,
+              child: DataTable(
+                headingRowColor: WidgetStateProperty.all(const Color(0xFFF8FAFC)),
+                columns: const [
+                  DataColumn(label: Text("Size", style: TextStyle(fontWeight: FontWeight.bold))),
+                  DataColumn(label: Text("Cu Wt")),
+                  DataColumn(label: Text("Film Wt")),
+                  DataColumn(label: Text("Coil Wt")),
+                  DataColumn(label: Text("Final OD")),
+                  DataColumn(label: Text("Action")),
+                ],
+                rows: wireTable.map((row) {
+                  return DataRow(cells: [
+                    DataCell(Text(row['size'].toString(), style: const TextStyle(fontWeight: FontWeight.bold))),
+                    DataCell(Text(row['copperWt'].toStringAsFixed(3))),
+                    DataCell(Text(row['filamWt'].toStringAsFixed(3))),
+                    DataCell(Text(row['coilWt'].toStringAsFixed(3), style: const TextStyle(fontWeight: FontWeight.bold))),
+                    DataCell(Text(row['finalOd'].toStringAsFixed(2))),
+                    DataCell(Row(
+                      children: [
+                        IconButton(
+                          icon: const Icon(Icons.edit, size: 18, color: Colors.blueGrey),
+                          onPressed: () => showEditRowDialog(row),
+                        ),
+                        IconButton(
+                          icon: const Icon(Icons.delete_outline, size: 18, color: Colors.redAccent),
+                          onPressed: () {
+                            setState(() => wireTable.remove(row));
+                          },
+                        ),
+                      ],
+                    )),
+                  ]);
+                }).toList(),
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void showEditRowDialog(Map<String, dynamic>? existing) {
+    final sizeCtrl = TextEditingController(text: existing != null ? existing['size'].toString() : "");
+    final cuCtrl = TextEditingController(text: existing != null ? existing['copperWt'].toString() : "");
+    final filmCtrl = TextEditingController(text: existing != null ? existing['filamWt'].toString() : "");
+    final odCtrl = TextEditingController(text: existing != null ? existing['finalOd'].toString() : "");
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        title: Text(existing == null ? "Add Wire Size" : "Edit Size ${existing['size']}"),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(controller: sizeCtrl, decoration: const InputDecoration(labelText: "Size (mm)")),
+            TextField(controller: cuCtrl, decoration: const InputDecoration(labelText: "Copper Wt (kg)")),
+            TextField(controller: filmCtrl, decoration: const InputDecoration(labelText: "Film Wt (kg)")),
+            TextField(controller: odCtrl, decoration: const InputDecoration(labelText: "Final OD (mm)")),
+          ],
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Cancel")),
+          ElevatedButton(
+            child: const Text("Save"),
+            onPressed: () {
+              final double cu = double.tryParse(cuCtrl.text) ?? 0.0;
+              final double film = double.tryParse(filmCtrl.text) ?? 0.0;
+              final double coil = cu + film;
+
+              setState(() {
+                if (existing != null) {
+                  existing['size'] = sizeCtrl.text;
+                  existing['copperWt'] = cu;
+                  existing['filamWt'] = film;
+                  existing['coilWt'] = coil;
+                  existing['finalOd'] = double.tryParse(odCtrl.text) ?? 0.0;
+                } else {
+                  wireTable.add({
+                    "size": sizeCtrl.text,
+                    "copperWt": cu,
+                    "filamWt": film,
+                    "coilWt": coil,
+                    "finalOd": double.tryParse(odCtrl.text) ?? 0.0,
+                  });
+                }
+              });
+              Navigator.pop(ctx);
+            },
+          )
+        ],
+      ),
+    );
+  }
+
+  // --- TAB 3: SETTINGS & CLOUD ---
+  Widget buildSettingsTab() {
+    return ListView(
+      padding: const EdgeInsets.all(16),
+      children: [
+        Card(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                const Text("GOOGLE SHEETS CONNECTION", style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.blueGrey)),
+                const SizedBox(height: 8),
+                Row(
+                  children: [
+                    Icon(Icons.check_circle, color: syncStatus.contains("Synced") ? Colors.green : Colors.amber, size: 20),
+                    const SizedBox(width: 8),
+                    Text(syncStatus, style: const TextStyle(fontWeight: FontWeight.bold)),
+                  ],
+                ),
+                const SizedBox(height: 16),
+                SizedBox(
+                  width: double.infinity,
+                  child: ElevatedButton.icon(
+                    style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFF0F172A), foregroundColor: Colors.white),
+                    icon: const Icon(Icons.cloud_download),
+                    label: const Text("Fetch Latest Data Now"),
+                    onPressed: fetchDataFromCloud,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                SizedBox(
+                  width: double.infinity,
+                  child: OutlinedButton.icon(
+                    icon: const Icon(Icons.cloud_upload),
+                    label: const Text("Save Current Rates to Sheet"),
+                    onPressed: pushRatesToCloud,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
